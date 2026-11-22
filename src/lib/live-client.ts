@@ -34,6 +34,16 @@ function desiredUrl() {
   return doc ? `/api/events?doc=${encodeURIComponent(doc)}` : "/api/events";
 }
 
+/**
+ * Events published while we were disconnected (or whose follow-up fetch failed while offline) are
+ * missed, so on every (re)connect and whenever the browser comes back online, every listener reloads.
+ */
+function resyncAll() {
+  const resync: LiveEvent[] = [{ type: "comments" }, { type: "presence" }, { type: "notification" }];
+  resync.forEach((e) => listeners.forEach((l) => l(e)));
+}
+if (typeof window !== "undefined") window.addEventListener("online", resyncAll);
+
 /** (Re)open or close the stream to match who is listening. Batched so mount/unmount bursts open one stream. */
 function reconcile() {
   if (reconcileTimer) clearTimeout(reconcileTimer);
@@ -47,8 +57,13 @@ function reconcile() {
     if (!wanted) return;
     setStatus("connecting");
     const es = new EventSource(wanted);
-    es.onopen = () => setStatus("live");
-    es.onerror = () => setStatus(es.readyState === EventSource.CLOSED ? "reconnecting" : "reconnecting");
+    // On every (re)connect, resync: events published while we were disconnected were missed,
+    // so ask every listener to reload (comments, presence → saved-content check, notifications).
+    es.onopen = () => {
+      setStatus("live");
+      resyncAll();
+    };
+    es.onerror = () => setStatus("reconnecting"); // EventSource retries automatically
     es.onmessage = (msg) => {
       try {
         const event = JSON.parse(msg.data) as LiveEvent;

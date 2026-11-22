@@ -57,6 +57,20 @@ try {
     if (share.status() !== 201) throw new Error(`share failed: ${share.status()}`);
   });
 
+  await step("Dashboard search is instant (results update on each keystroke, no server round trip)", async () => {
+    await alice.page.goto(`${BASE}/`);
+    const box = alice.page.getByLabel("Search documents");
+    await box.click();
+    const t0 = Date.now();
+    await box.pressSequentially(`realtime check ${stamp}`, { delay: 0 });
+    await alice.page.locator("main ul li", { hasText: `Realtime check ${stamp}` }).waitFor({ timeout: 2000 });
+    const rows = await alice.page.locator("main ul li").count();
+    const ms = Date.now() - t0;
+    if (rows !== 1) throw new Error(`expected 1 matching row, got ${rows}`);
+    if (ms > 1500) throw new Error(`search took ${ms} ms`);
+    results.push(`   ↳ typed ${`realtime check ${stamp}`.length} chars and got the filtered list in ${ms} ms`);
+  });
+
   await step("Both open it and the live stream connects", async () => {
     await alice.page.goto(`${BASE}/documents/${docId}`);
     await bob.page.goto(`${BASE}/documents/${docId}`);
@@ -160,6 +174,20 @@ try {
     await bob.page.getByPlaceholder("Add a comment…").fill(comment);
     await bob.page.getByRole("button", { name: "Comment", exact: true }).click();
     await alice.page.getByText(comment).waitFor({ timeout: 4000 });
+  });
+
+  await step("Alice drops offline, Bob comments meanwhile → back online, Alice gets it (no refresh)", async () => {
+    const missed = `Sent while Alice was offline ${stamp}`;
+    await alice.ctx.setOffline(true);
+    try {
+      await bob.page.getByPlaceholder("Add a comment…").fill(missed);
+      await bob.page.getByRole("button", { name: "Comment", exact: true }).click();
+      await bob.page.getByText(missed).waitFor({ timeout: 4000 });
+      await alice.page.waitForTimeout(1500);
+    } finally {
+      await alice.ctx.setOffline(false);
+    }
+    await alice.page.getByText(missed).waitFor({ timeout: 8000 });
   });
 
   await step("Alice's bell shows the new notification instantly", async () => {

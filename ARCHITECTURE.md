@@ -121,6 +121,7 @@ The same type and size rules are checked in the browser for quick feedback and e
   - **Presence:**
     - The SSE connection itself counts as presence: opening it marks you as here, and closing your last tab removes you immediately.
     - A slow heartbeat (15 s) is only a fallback.
+  - **Resync:** on every reconnect, and whenever the browser comes back online, every listener reloads (comments, presence, notifications), so events that happened while you were disconnected aren't lost. The e2e test covers this by taking Alice offline while Bob comments.
   - **Content:**
     - A throttled typing ping makes "Bob is editing…" appear on the first keystroke.
     - Autosave debounces typing but never holds changes for more than 1.5 s, so text flows to other people while someone keeps typing.
@@ -136,8 +137,9 @@ The same type and size rules are checked in the browser for quick feedback and e
 
 ## Search and filters
 
-- Dashboard filters are URL parameters (`q`, `owner`, `modified`, `sort`). They're parsed and whitelisted in `src/lib/doc-filters.ts` (unit-tested) and turned into a Prisma `where`, which is always combined with the caller's ownership or share scope.
-- Search is case-insensitive `ILIKE` over the title, the content, the owner's name and attachment file names. At larger scale it would become a Postgres full-text index (`tsvector` + GIN).
+- **Search is instant.** The dashboard loads every document the user can open once (owned and shared, already access-scoped on the server), along with a plain-text excerpt of each one's content.
+- Search (title, content, owner, attachment names), filters (owner, last modified) and sort then run in the browser on every keystroke, using pure functions in `src/lib/doc-filters.ts` (unit-tested). The URL mirrors the state through `history.replaceState`, so there's no server round trip.
+- **Tradeoff:** this fits a team-sized workspace. With thousands of documents it would switch back to server-side search over a Postgres full-text index (`tsvector` + GIN), with pagination.
 
 ## Validation and errors
 
