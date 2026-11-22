@@ -188,6 +188,9 @@ export default function DocumentEditor({
   const [liveEditor, setLiveEditor] = useState<{ id: string; name: string } | null>(null);
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /** True while we replace content with someone else's save — those selection changes aren't the user's. */
+  const applyingRemote = useRef(false);
+
   // ---- Collaborators' carets: latest raw positions per user, rendered by the RemoteCursors plugin.
   const rawCursors = useRef(new Map<string, RemoteCursor>());
   const pushCursors = useCallback(() => {
@@ -204,11 +207,16 @@ export default function DocumentEditor({
         if (!editor) return;
         const { from, to } = editor.state.selection;
         const hadFocus = editor.isFocused;
-        applyServerCopy(copy);
-        pushCursors(); // their carets refer to the content we just loaded
-        if (hadFocus) {
-          const max = editor.state.doc.content.size;
-          editor.commands.setTextSelection({ from: Math.min(from, max), to: Math.min(to, max) });
+        applyingRemote.current = true;
+        try {
+          applyServerCopy(copy);
+          pushCursors(); // their carets refer to the content we just loaded
+          if (hadFocus) {
+            const max = editor.state.doc.content.size;
+            editor.commands.setTextSelection({ from: Math.min(from, max), to: Math.min(to, max) });
+          }
+        } finally {
+          applyingRemote.current = false;
         }
       } catch {
         /* transient; the presence fallback will catch up */
@@ -263,6 +271,8 @@ export default function DocumentEditor({
       }).catch(() => {});
     };
     const schedule = () => {
+      // Only broadcast moves the user actually made, in the window they're actually using.
+      if (applyingRemote.current || !editor.isFocused || !document.hasFocus()) return;
       if (timer) return;
       timer = setTimeout(send, Math.max(0, CURSOR_THROTTLE_MS - (Date.now() - last)));
     };

@@ -36,7 +36,9 @@ export const RemoteCursors = Extension.create({
             const next = tr.getMeta(remoteCursorsKey) as RemoteCursor[] | undefined;
             if (next) return next;
             if (!tr.docChanged) return value;
-            return value.map((c) => ({ ...c, from: tr.mapping.map(c.from), to: tr.mapping.map(c.to) }));
+            // assoc -1: text inserted exactly at someone's caret goes *after* it, so their caret
+            // stays put instead of being dragged along by whoever is typing there (Google Docs behaviour).
+            return value.map((c) => ({ ...c, from: tr.mapping.map(c.from, -1), to: tr.mapping.map(c.to, -1) }));
           },
         },
         props: {

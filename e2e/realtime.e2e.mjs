@@ -101,6 +101,30 @@ try {
     await shot(alice.page, "alice-sees-bob-caret");
   });
 
+  await step("Alice's caret stays put on Bob's screen while Bob types right next to it", async () => {
+    // Both carets at the end of the same line — exactly where Bob keeps typing.
+    await bob.page.keyboard.press("End");
+    await alice.page.bringToFront();
+    await alice.page.locator(".ProseMirror").click();
+    await alice.page.keyboard.press("Control+End");
+    const aliceLabel = bob.page.locator(".remote-caret-label", { hasText: "Alice Admin" });
+    await aliceLabel.waitFor({ timeout: 4000 });
+    await bob.page.waitForTimeout(400);
+    const before = await aliceLabel.boundingBox();
+    await bob.page.bringToFront();
+    await bob.page.locator(".ProseMirror").click();
+    await bob.page.keyboard.press("Control+End");
+    await bob.page.keyboard.type(" and more from Bob", { delay: 40 });
+    await bob.page.waitForTimeout(3000); // let saves + syncs + cursor broadcasts settle
+    const after = await aliceLabel.boundingBox();
+    if (Math.abs(after.x - before.x) > 4 || Math.abs(after.y - before.y) > 4) {
+      throw new Error(`Alice's caret moved on Bob's screen: ${JSON.stringify(before)} -> ${JSON.stringify(after)}`);
+    }
+    // ...while Bob's own caret moved on Alice's screen with his typing.
+    await alice.page.locator(".ProseMirror").getByText("and more from Bob").waitFor({ timeout: 4000 });
+    await shot(bob.page, "bob-sees-alice-caret-still");
+  });
+
   const comment = `Live comment ${stamp}`;
   await step("Bob comments → it appears in Alice's panel without a refresh", async () => {
     await bob.page.getByPlaceholder("Add a comment…").fill(comment);
