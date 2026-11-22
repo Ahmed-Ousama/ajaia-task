@@ -15,12 +15,11 @@ Browser ──HTTPS──▶ Caddy (TLS via Let's Encrypt, sslip.io hostname)
                                                          └─▶ Keycloak  (users and passwords; its own "keycloak" DB in the same Postgres)
 ```
 
-Everything runs from one `docker-compose.yml` on one VPS. Only Caddy is exposed (80/443).
+Everything runs from one `docker-compose.yml` on one VPS. Only Caddy is exposed (80/443); the app, Keycloak, Postgres and MinIO are reachable only inside the Docker network.
 
 - **The live demo shares a VPS with another production app** that owns ports 80 and 443. It runs as an isolated Compose project with memory limits, Caddy on its own port, and HTTPS through a Cloudflare tunnel, without touching the other app's proxy.
 - **Real-time works through that tunnel too.** Cloudflare quick tunnels buffer Server-Sent Events, so the client detects the missing `hello` frame and switches to long-polling over a bounded server-side event log (`/api/events/poll`). The events and the client API stay the same.
 - **CI:** GitHub Actions runs lint, type-check, the tests (against Postgres and MinIO service containers) and a production build on every push.
-The app, Keycloak, Postgres and MinIO are reachable only inside the Docker network.
 
 | Concern | Choice | Why |
 |---|---|---|
