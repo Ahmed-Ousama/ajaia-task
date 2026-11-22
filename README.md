@@ -1,5 +1,7 @@
 # Ajaia Docs
 
+[![CI](https://github.com/Ahmed-Ousama/ajaia-task/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahmed-Ousama/ajaia-task/actions/workflows/ci.yml)
+
 Ajaia Docs is a lightweight collaborative document editor. You can create, format, import and share
 documents, attach files to them, and get notified when someone shares a document with you.
 

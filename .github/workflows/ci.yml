@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint, type-check, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ajaia
+          POSTGRES_PASSWORD: ajaia
+          POSTGRES_DB: ajaia
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ajaia -d ajaia"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://ajaia:ajaia@localhost:54329/ajaia
+      S3_ENDPOINT: http://localhost:9100
+      S3_REGION: us-east-1
+      S3_BUCKET: ajaia-attachments
+      S3_ACCESS_KEY: ajaia
+      S3_SECRET_KEY: ajaia-secret-key
+      AUTH_SECRET: ci-only-auth-secret-0123456789abcdef
+      AUTH_URL: http://localhost:3100
+      AUTH_KEYCLOAK_ID: ajaia-docs
+      AUTH_KEYCLOAK_SECRET: ci-only
+      AUTH_KEYCLOAK_ISSUER: http://localhost:8180/realms/ajaia
+      NEXT_TELEMETRY_DISABLED: 1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Real object storage for the upload/duplicate tests (service containers can't pass `server /data`).
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9100:9000 \
+            -e MINIO_ROOT_USER=ajaia -e MINIO_ROOT_PASSWORD=ajaia-secret-key \
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+      - name: Wait for MinIO
+        run: for i in $(seq 1 30); do curl -sf http://localhost:9100/minio/health/live && break; sleep 1; done
+
+      - run: npm test
+      - run: npm run build
