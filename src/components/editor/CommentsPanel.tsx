@@ -4,7 +4,7 @@ import { MessageSquare } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api, jsonInit } from "@/lib/api-client";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { useDocEvent } from "./useDocEvents";
+import { useLiveEvent } from "@/lib/live-client";
 import { can, type Access } from "@/lib/access";
 import { formatDate } from "@/lib/format";
 
@@ -57,7 +57,7 @@ export default function CommentsPanel({
   }, [load]);
 
   // Live: someone added/resolved/deleted a comment → refresh immediately.
-  useDocEvent(documentId, "comments", () => void load());
+  useLiveEvent("comments", () => void load());
 
   function captureSelection() {
     const text = getSelectedText().trim();

@@ -34,14 +34,16 @@ import AttachmentsPanel from "./AttachmentsPanel";
 import CommentsPanel from "./CommentsPanel";
 import VersionHistory from "./VersionHistory";
 import { usePresence } from "./usePresence";
-import { useDocEvent } from "./useDocEvents";
+import { useLiveDocument, useLiveEvent, useLiveStatus } from "@/lib/live-client";
 import { downloadMarkdown, printToPdf } from "./export";
 import type { AttachmentDTO, DocumentDTO, ShareDTO } from "./types";
 
 type SaveState = "saved" | "unsaved" | "saving" | "error";
 type Patch = { title?: string; content?: string };
 
-const SAVE_DEBOUNCE_MS = 800;
+const SAVE_DEBOUNCE_MS = 700;
+const MAX_SAVE_WAIT_MS = 1500;
+const TYPING_PING_MS = 2000;
 
 export default function DocumentEditor({
   doc,
@@ -87,6 +89,7 @@ export default function DocumentEditor({
     const body = pending.current;
     if (Object.keys(body).length === 0) return;
     pending.current = {};
+    pendingSince.current = null;
     inFlight.current = true;
     setSaveState("saving");
     try {
@@ -104,14 +107,26 @@ export default function DocumentEditor({
     }
   }, [doc.id]);
 
+  const pendingSince = useRef<number | null>(null);
+  const lastTypingPing = useRef(0);
+
   const queue = useCallback(
     (patch: Patch) => {
       pending.current = { ...pending.current, ...patch };
       setSaveState("unsaved");
+      // Debounce, but never hold changes longer than MAX_SAVE_WAIT_MS while someone keeps typing,
+      // so collaborators see the text flow in near real time.
+      pendingSince.current ??= Date.now();
+      const wait = Math.min(SAVE_DEBOUNCE_MS, Math.max(0, pendingSince.current + MAX_SAVE_WAIT_MS - Date.now()));
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(flush, SAVE_DEBOUNCE_MS);
+      timer.current = setTimeout(flush, wait);
+      // Tell collaborators "I'm typing" immediately (throttled).
+      if (Date.now() - lastTypingPing.current > TYPING_PING_MS) {
+        lastTypingPing.current = Date.now();
+        void fetch(`/api/documents/${doc.id}/activity`, { method: "POST" }).catch(() => {});
+      }
     },
-    [flush],
+    [flush, doc.id],
   );
 
   const editor = useEditor({
@@ -191,11 +206,22 @@ export default function DocumentEditor({
     [applyServerCopy, doc.id, editor],
   );
 
-  useDocEvent(doc.id, "content", (e) => {
+  // One live stream per tab; joining it also announces our presence on this document.
+  useLiveDocument(doc.id);
+  const live = useLiveStatus();
+
+  useLiveEvent("typing", (e) => {
+    if (e.by.id === currentUserId) return;
+    setLiveEditor(e.by);
+    if (liveTimer.current) clearTimeout(liveTimer.current);
+    liveTimer.current = setTimeout(() => setLiveEditor(null), 4000);
+  });
+
+  useLiveEvent("content", (e) => {
     if (e.by.id === currentUserId || Date.parse(e.updatedAt) <= lastKnownUpdatedAt.current) return;
     setLiveEditor(e.by);
     if (liveTimer.current) clearTimeout(liveTimer.current);
-    liveTimer.current = setTimeout(() => setLiveEditor(null), 6000);
+    liveTimer.current = setTimeout(() => setLiveEditor(null), 4000);
     const busy = Object.keys(pending.current).length > 0 || inFlight.current;
     if (busy && editable) setRemoteEditor(e.by.name);
     else void syncRemote(e.by.name);
@@ -309,8 +335,17 @@ export default function DocumentEditor({
                   </button>
                 )}
               </span>
+              <span
+                className={`flex items-center gap-1 ${live === "live" ? "text-emerald-700" : "text-amber-600"}`}
+                title={live === "live" ? "Connected: changes, comments and presence update instantly" : "Reconnecting to live updates…"}
+                data-testid="live-status"
+              >
+                <span aria-hidden>·</span>
+                <span className={`h-2 w-2 rounded-full ${live === "live" ? "bg-emerald-500" : "animate-pulse bg-amber-500"}`} />
+                {live === "live" ? "Live" : "Connecting…"}
+              </span>
               {liveEditor && (
-                <span className="flex items-center gap-1 font-medium text-emerald-700">
+                <span className="flex items-center gap-1 font-medium text-emerald-700" data-testid="live-editor">
                   <span aria-hidden>·</span> <Pencil size={12} /> {liveEditor.name} is editing…
                 </span>
               )}

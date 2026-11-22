@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useDocEvent } from "./useDocEvents";
+import { useLiveEvent } from "@/lib/live-client";
 
 export type PresenceUser = { id: string; name: string };
 export type PresenceState = {
@@ -30,7 +30,7 @@ export function usePresence(documentId: string): PresenceState {
   }, [url]);
 
   // Someone joined or left → refresh the list now.
-  useDocEvent(documentId, "presence", () => void beat());
+  useLiveEvent("presence", () => void beat());
 
   useEffect(() => {
     alive.current = true;

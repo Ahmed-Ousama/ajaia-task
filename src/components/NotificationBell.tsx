@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Bell, Check, CheckCheck, MessageSquare, Share2, ShieldCheck, Undo2 } from "lucide-react";
 import { api, jsonInit } from "@/lib/api-client";
 import { formatDate } from "@/lib/format";
+import { useLiveEvent } from "@/lib/live-client";
 
 type Item = {
   id: string;
@@ -16,59 +18,98 @@ type Item = {
   document: { id: string; title: string };
 };
 
-const POLL_MS = 60_000; // fallback; new notifications are pushed over SSE
+const POLL_MS = 60_000; // fallback only; new notifications are pushed over the live stream
 
 function describe(n: Item) {
   if (n.type === "COMMENT_ADDED") {
-    return { lead: `${n.actor.name} commented on`, tail: n.excerpt ? `: “${n.excerpt}”` : "" };
+    return { icon: MessageSquare, lead: `${n.actor.name} commented on`, tail: n.excerpt ? `“${n.excerpt}”` : "" };
   }
   const access = n.role === "EDITOR" ? "can edit" : "can view";
   return n.type === "DOCUMENT_SHARED"
-    ? { lead: `${n.actor.name} shared`, tail: `with you · you ${access}` }
-    : { lead: `${n.actor.name} changed your access to`, tail: `· you ${access} now` };
+    ? { icon: Share2, lead: `${n.actor.name} shared`, tail: `with you · you ${access}` }
+    : { icon: ShieldCheck, lead: `${n.actor.name} changed your access to`, tail: `· you ${access} now` };
 }
 
-/** Header bell: unread count + recent "shared with you" notifications. Polls every 30 s and on focus. */
+/**
+ * Header bell. Opening the panel marks everything as read (the badge clears); items that were new
+ * keep a "new" highlight while the panel is open. Each item can be toggled read/unread.
+ */
 export default function NotificationBell() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [unread, setUnread] = useState(0);
+  /** Ids that were unread when the panel was opened — highlighted as "new" for this viewing. */
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
   const box = useRef<HTMLDivElement>(null);
+  const openRef = useRef(false);
   const lastUnread = useRef(0);
+
+  const setRead = useCallback(async (ids: string[] | undefined, read: boolean) => {
+    const now = new Date().toISOString();
+    setItems((prev) => prev.map((n) => (!ids || ids.includes(n.id) ? { ...n, readAt: read ? (n.readAt ?? now) : null } : n)));
+    await api("/api/notifications/read", jsonInit("POST", { ids, read })).catch(() => {});
+  }, []);
 
   const load = useCallback(async () => {
     try {
       const data = await api<{ unread: number; items: Item[] }>("/api/notifications");
+      // Something new was shared/commented → refresh server-rendered lists (e.g. "Shared with me").
+      if (data.unread > lastUnread.current) router.refresh();
+      if (openRef.current && data.unread > 0) {
+        // Panel is open: new arrivals are seen right away.
+        const newIds = data.items.filter((n) => !n.readAt).map((n) => n.id);
+        setFresh((prev) => new Set([...prev, ...newIds]));
+        setItems(data.items);
+        setUnread(0);
+        lastUnread.current = 0;
+        void setRead(newIds, true);
+        return;
+      }
       setItems(data.items);
       setUnread(data.unread);
-      // Something new was shared → refresh server-rendered lists (e.g. "Shared with me").
-      if (data.unread > lastUnread.current) router.refresh();
       lastUnread.current = data.unread;
     } catch {
-      /* transient network errors: keep the last state, try again on the next tick */
+      /* transient network errors: keep the last state */
     }
-  }, [router]);
+  }, [router, setRead]);
+
+  useLiveEvent("notification", () => void load());
 
   useEffect(() => {
     void load();
     const timer = setInterval(load, POLL_MS);
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
-    // Live push: the server pings this stream whenever a notification is created for us.
-    const live = new EventSource("/api/notifications/events");
-    live.onmessage = () => void load();
     return () => {
       clearInterval(timer);
       window.removeEventListener("focus", onFocus);
-      live.close();
     };
   }, [load]);
 
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    openRef.current = next;
+    if (next) {
+      const newIds = items.filter((n) => !n.readAt).map((n) => n.id);
+      setFresh(new Set(newIds));
+      if (newIds.length) {
+        setUnread(0);
+        lastUnread.current = 0;
+        void setRead(newIds, true);
+      }
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const close = () => {
+      setOpen(false);
+      openRef.current = false;
+    };
+    const onDown = (e: MouseEvent) => !box.current?.contains(e.target as Node) && close();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -77,69 +118,79 @@ export default function NotificationBell() {
     };
   }, [open]);
 
-  async function markRead(ids?: string[]) {
-    const now = new Date().toISOString();
-    setItems((prev) => prev.map((n) => (!ids || ids.includes(n.id) ? { ...n, readAt: n.readAt ?? now } : n)));
-    setUnread((u) => (ids ? Math.max(0, u - ids.length) : 0));
-    lastUnread.current = ids ? Math.max(0, lastUnread.current - ids.length) : 0;
-    await api("/api/notifications/read", jsonInit("POST", ids ? { ids } : {})).catch(() => load());
-  }
-
   function openItem(n: Item) {
     setOpen(false);
-    if (!n.readAt) void markRead([n.id]);
+    openRef.current = false;
+    if (!n.readAt) void setRead([n.id], true);
     router.push(`/documents/${n.document.id}`);
+  }
+
+  function toggleRead(n: Item) {
+    const makeRead = !n.readAt;
+    void setRead([n.id], makeRead);
+    setUnread((u) => Math.max(0, u + (makeRead ? -1 : 1)));
+    lastUnread.current = Math.max(0, lastUnread.current + (makeRead ? -1 : 1));
+    if (!makeRead) setFresh((prev) => new Set([...prev, n.id]));
   }
 
   return (
     <div className="relative" ref={box}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         className="relative grid h-9 w-9 place-items-center rounded-full text-gray-600 hover:bg-gray-100"
         aria-label={unread ? `Notifications (${unread} unread)` : "Notifications"}
         aria-expanded={open}
+        data-testid="notification-bell"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
+        <Bell size={20} />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[11px] font-semibold text-white">
+          <span
+            className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-red-600 px-1 text-[11px] font-semibold text-white"
+            data-testid="notification-count"
+          >
             {unread > 9 ? "9+" : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2">
+        <div className="absolute right-0 z-30 mt-2 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
             <span className="text-sm font-semibold text-gray-900">Notifications</span>
-            {unread > 0 && (
-              <button onClick={() => markRead()} className="text-xs text-blue-700 hover:underline">
-                Mark all as read
+            {items.some((n) => !n.readAt) && (
+              <button onClick={() => void setRead(undefined, true)} className="flex items-center gap-1 text-xs text-blue-700 hover:underline">
+                <CheckCheck size={14} /> Mark all as read
               </button>
             )}
           </div>
           {items.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-gray-500">No notifications yet.</p>
+            <p className="px-4 py-8 text-center text-sm text-gray-500">No notifications yet.</p>
           ) : (
-            <ul className="max-h-96 overflow-y-auto">
+            <ul className="max-h-[28rem] overflow-y-auto" data-testid="notification-list">
               {items.map((n) => {
-                const { lead, tail } = describe(n);
+                const { icon: Icon, lead, tail } = describe(n);
+                const isNew = fresh.has(n.id) || !n.readAt;
                 return (
-                  <li key={n.id}>
-                    <button
-                      onClick={() => openItem(n)}
-                      className={`flex w-full gap-3 px-4 py-3 text-left hover:bg-gray-50 ${n.readAt ? "" : "bg-blue-50/60"}`}
-                    >
-                      <span
-                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.readAt ? "bg-transparent" : "bg-blue-600"}`}
-                        aria-hidden
-                      />
+                  <li key={n.id} className={`group relative ${isNew ? "bg-blue-50/70" : ""}`}>
+                    <button onClick={() => openItem(n)} className="flex w-full gap-3 px-4 py-3 pr-12 text-left hover:bg-gray-50/80">
+                      <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-gray-100 text-gray-600">
+                        <Icon size={15} />
+                      </span>
                       <span className="min-w-0 text-sm text-gray-700">
                         {lead} <span className="font-medium text-gray-900">{n.document.title}</span> {tail}
-                        <span className="mt-0.5 block text-xs text-gray-500">{formatDate(n.createdAt)}</span>
+                        <span className="mt-0.5 flex items-center gap-2 text-xs text-gray-500">
+                          {formatDate(n.createdAt)}
+                          {isNew && <span className="rounded-full bg-blue-600 px-1.5 py-px text-[10px] font-semibold text-white">NEW</span>}
+                        </span>
                       </span>
+                    </button>
+                    <button
+                      onClick={() => toggleRead(n)}
+                      title={n.readAt ? "Mark as unread" : "Mark as read"}
+                      aria-label={n.readAt ? "Mark as unread" : "Mark as read"}
+                      className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full text-gray-400 opacity-0 transition hover:bg-gray-200 hover:text-gray-700 focus:opacity-100 group-hover:opacity-100"
+                    >
+                      {n.readAt ? <Undo2 size={14} /> : <Check size={14} />}
                     </button>
                   </li>
                 );

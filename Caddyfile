@@ -1,9 +1,19 @@
 # Only the app is public. Keycloak stays on the internal Docker network: the app's
 # server exchanges credentials with it directly, browsers never talk to it.
 {$DOMAIN} {
-	encode gzip
 	request_body {
 		max_size 6MB
 	}
-	reverse_proxy app:3000
+
+	# Live updates (Server-Sent Events): no compression, flush every event immediately.
+	handle /api/events {
+		reverse_proxy app:3000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode gzip
+		reverse_proxy app:3000
+	}
 }

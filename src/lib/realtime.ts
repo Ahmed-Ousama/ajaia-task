@@ -8,6 +8,7 @@ import { EventEmitter } from "node:events";
 export type DocEvent =
   | { type: "presence" }
   | { type: "comments" }
+  | { type: "typing"; by: { id: string; name: string } }
   | { type: "content"; updatedAt: string; by: { id: string; name: string } };
 
 const g = globalThis as unknown as { __ajaiaBus?: EventEmitter; __ajaiaConns?: Map<string, number> };

@@ -112,6 +112,13 @@ There are 40 tests:
 
 Type-check and lint with `npx tsc --noEmit` and `npm run lint`.
 
+**End-to-end real-time check (two real browsers):** `npm run test:e2e`. You need the app running and a local Chrome; set `BASE_URL` to test a deployment. It drives Alice and Bob through the whole collaboration flow and cleans up after itself:
+- both see "Live" and each other's presence;
+- Bob types: Alice sees "Bob is editing…" and his text appears without a refresh;
+- Bob comments: Alice sees it instantly and her 🔔 updates;
+- opening the bell marks notifications read;
+- Bob leaves: his avatar disappears for Alice.
+
 ## Deploy (single VPS)
 
 ```bash

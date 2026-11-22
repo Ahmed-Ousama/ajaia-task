@@ -110,14 +110,15 @@ The same type and size rules are checked in the browser for quick feedback and e
   - A restore runs in one transaction and always adds a new version, so it can be undone.
 - **Real-time collaboration indicators (Server-Sent Events):**
   - **The channels:**
-    - Each open document holds one `EventSource` to `/api/documents/:id/events`, shared by every component on the page.
-    - The bell holds one to `/api/notifications/events`.
-    - Writes publish to an in-process event bus (`src/lib/realtime.ts`): saves, restores, comments, joins and leaves.
+    - Each browser tab holds exactly one `EventSource` to `/api/events?doc=<id>`. It carries the user's notification channel and, on a document page, that document's channel.
+    - One stream per tab keeps HTTP/1.1 browsers well under their 6-connections-per-host limit.
+    - Writes publish to an in-process event bus (`src/lib/realtime.ts`): saves, restores, comments, typing pings, joins and leaves.
   - **Presence:**
     - The SSE connection itself counts as presence: opening it marks you as here, and closing your last tab removes you immediately.
     - A slow heartbeat (15 s) is only a fallback.
   - **Content:**
-    - When someone else saves, you see "Bob is editing…".
+    - A throttled typing ping makes "Bob is editing…" appear on the first keystroke.
+    - Autosave debounces typing but never holds changes for more than 1.5 s, so text flows to other people while someone keeps typing.
     - If you have no unsaved changes, their version is applied straight into your editor and your caret is kept.
     - If you are mid-edit, you get a "Load latest" banner instead, so nobody's typing is overwritten.
   - **Why SSE and not websockets:** the traffic is one-way (server to client) and SSE works through Caddy with no extra infrastructure. Caddy skips compression and flushes immediately for SSE routes, and `Cache-Control: no-transform` stops Next.js gzip from buffering them.
