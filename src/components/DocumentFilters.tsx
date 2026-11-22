@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Search, X } from "lucide-react";
-import { MODIFIED_FILTERS, SORTS, TYPE_FILTERS } from "@/lib/doc-filters";
+import { MODIFIED_FILTERS, SORTS } from "@/lib/doc-filters";
 
 /** Search box + filter dropdowns. State lives in the URL, so results are shareable and survive refresh. */
 export default function DocumentFilters({ resultCount }: { resultCount: number }) {
@@ -32,7 +32,7 @@ export default function DocumentFilters({ resultCount }: { resultCount: number }
     if (debounce.current) clearTimeout(debounce.current);
   }, []);
 
-  const active = ["q", "type", "modified", "owner", "sort"].some((k) => params.get(k));
+  const active = ["q", "modified", "owner", "sort"].some((k) => params.get(k));
 
   const select =
     "h-10 cursor-pointer rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 shadow-sm hover:border-gray-300 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20";
@@ -57,14 +57,6 @@ export default function DocumentFilters({ resultCount }: { resultCount: number }
           <option value="">Owned by anyone</option>
           <option value="me">Owned by me</option>
           <option value="shared">Shared with me</option>
-        </select>
-        <select aria-label="Attachment type" className={select} value={params.get("type") ?? ""} onChange={(e) => update("type", e.target.value)}>
-          <option value="">Any file type</option>
-          {Object.entries(TYPE_FILTERS).map(([k, v]) => (
-            <option key={k} value={k}>
-              Has {v.label}
-            </option>
-          ))}
         </select>
         <select aria-label="Last modified" className={select} value={params.get("modified") ?? ""} onChange={(e) => update("modified", e.target.value)}>
           <option value="">Any time</option>

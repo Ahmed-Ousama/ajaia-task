@@ -136,7 +136,7 @@ The same type and size rules are checked in the browser for quick feedback and e
 
 ## Search and filters
 
-- Dashboard filters are URL parameters (`q`, `owner`, `type`, `modified`, `sort`). They're parsed and whitelisted in `src/lib/doc-filters.ts` (unit-tested) and turned into a Prisma `where`, which is always combined with the caller's ownership or share scope.
+- Dashboard filters are URL parameters (`q`, `owner`, `modified`, `sort`). They're parsed and whitelisted in `src/lib/doc-filters.ts` (unit-tested) and turned into a Prisma `where`, which is always combined with the caller's ownership or share scope.
 - Search is case-insensitive `ILIKE` over the title, the content, the owner's name and attachment file names. At larger scale it would become a Postgres full-text index (`tsvector` + GIN).
 
 ## Validation and errors

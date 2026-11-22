@@ -3,11 +3,10 @@ import { documentOrderBy, documentWhere, hasActiveFilters, parseFilters } from "
 
 describe("dashboard filters", () => {
   it("parses known values and ignores junk from the URL", () => {
-    const f = parseFilters({ q: "  plan  ", type: "pdf", modified: "week", owner: "shared", sort: "title" });
-    expect(f).toEqual({ q: "plan", type: "pdf", modified: "week", owner: "shared", sort: "title" });
-    expect(parseFilters({ type: "exe", modified: "decade", owner: "root", sort: "random" })).toEqual({
+    const f = parseFilters({ q: "  plan  ", modified: "week", owner: "shared", sort: "title" });
+    expect(f).toEqual({ q: "plan", modified: "week", owner: "shared", sort: "title" });
+    expect(parseFilters({ modified: "decade", owner: "root", sort: "random" })).toEqual({
       q: "",
-      type: "",
       modified: "",
       owner: "",
       sort: "recent",
@@ -21,11 +20,10 @@ describe("dashboard filters", () => {
     expect(JSON.stringify(where)).toContain('"mode":"insensitive"');
   });
 
-  it("filters by attachment extension and modification window", () => {
+  it("filters by modification window", () => {
     const now = new Date("2026-11-22T12:00:00Z");
-    const where = documentWhere(parseFilters({ type: "image", modified: "week" }), now);
+    const where = documentWhere(parseFilters({ modified: "week" }), now);
     const json = JSON.stringify(where);
-    expect(json).toContain('".webp"');
     expect(json).toContain("2026-11-15T12:00:00.000Z");
     expect(documentOrderBy(parseFilters({ sort: "title" }))).toEqual({ title: "asc" });
   });

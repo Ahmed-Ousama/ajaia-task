@@ -61,7 +61,7 @@ Signing out also ends the Keycloak session, so switching between users works wit
 - **Export:** **Word (.docx)**, PDF through the browser's print dialog (only the document is printed), or Markdown (`.md`).
 - **Search and filters** on the dashboard:
   - Full-text search over titles, content, owner names and attachment file names.
-  - Filter by owner (me or shared with me), by attachment type (PDF, images, Word, spreadsheets, slides, text) and by last modified (today, 7 days, 30 days), and sort the results.
+  - Filter by owner (me or shared with me) and by last modified (today, 7 days, 30 days), and sort the results.
   - Filters are kept in the URL, so they survive a refresh and can be shared.
 - **Auth:**
   - The app has its own login page; Keycloak checks the credentials on the server side.

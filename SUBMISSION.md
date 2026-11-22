@@ -41,7 +41,7 @@ See [README](README.md#demo-accounts) for what each account starts with and a 2-
   - **real-time** presence, an "X is editing" indicator, live content sync and live comments over Server-Sent Events;
   - export to **Word (.docx)**, PDF and Markdown.
 - Comment notifications plus live notification delivery.
-- Dashboard **search and filters**: search by title, content, owner or attachment name; filter by owner, attachment type and date; sort.
+- Dashboard **search and filters**: search by title, content, owner or attachment name; filter by owner and date; sort.
 - 44 automated tests, plus a **two-browser Playwright end-to-end check** of the real-time flow (`npm run test:e2e`) (unit + API integration against Postgres and MinIO). Type-check and lint are clean.
 
 ## Incomplete or deliberately cut
