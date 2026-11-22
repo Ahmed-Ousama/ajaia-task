@@ -1,6 +1,7 @@
 /** Word export: real route handler + Postgres; the produced .docx is read back with mammoth (the importer). */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import mammoth from "mammoth";
+import JSZip from "jszip";
 import type { CurrentUser } from "@/lib/session";
 
 let currentUser: CurrentUser | null = null;
@@ -52,6 +53,22 @@ describe("export to Word", () => {
     expect(html).toContain("<strong>bold</strong>");
     expect(html).toContain("<em>italic</em>");
     expect(html).toMatch(/<ul><li>one<\/li><li>two<\/li><\/ul>/);
+  });
+
+  it("keeps text colour and highlights as Word formatting", async () => {
+    currentUser = owner;
+    await prisma.document.update({
+      where: { id: docId },
+      data: {
+        content:
+          '<p><span style="color: #dc2626;">red</span> <mark data-color="#bbf7d0" style="background-color: #bbf7d0; color: inherit;">marked</mark></p>',
+      },
+    });
+    const res = await get();
+    const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+    const xml = await zip.file("word/document.xml")!.async("string");
+    expect(xml).toContain('<w:color w:val="dc2626"/>');
+    expect(xml).toMatch(/<w:shd [^>]*w:fill="bbf7d0"/);
   });
 
   it("is access-controlled and validates the format", async () => {
