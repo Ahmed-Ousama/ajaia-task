@@ -77,6 +77,21 @@ try {
     for (const p of [alice.page, bob.page]) await p.getByTestId("live-status").getByText("Live").waitFor({ timeout: 8000 });
   });
 
+  await step("Share dialog lists workspace people (without those who already have access) and filters as you type", async () => {
+    await alice.page.getByRole("button", { name: /^Share/ }).click();
+    const box = alice.page.getByLabel("Person to share with");
+    await box.click();
+    const list = alice.page.locator("#share-people");
+    await list.getByText("Carol Chen").waitFor({ timeout: 3000 });
+    if (await list.getByText("Bob Builder").count()) throw new Error("Bob already has access but is suggested");
+    await box.fill("car");
+    if ((await list.getByRole("option").count()) !== 1) throw new Error("filter did not narrow to Carol");
+    await list.getByText("Carol Chen").click();
+    if ((await box.inputValue()) !== "carol@ajaia.test") throw new Error(`picked ${await box.inputValue()}`);
+    await shot(alice.page, "share-picker");
+    await alice.page.getByRole("button", { name: "Close" }).click();
+  });
+
   await step("Presence: Alice sees Bob's avatar", async () => {
     await alice.page.locator('[title^="Bob Builder is"]').waitFor({ timeout: 5000 });
   });
