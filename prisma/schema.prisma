@@ -1,0 +1,151 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String             @id @default(cuid())
+  email               String             @unique
+  name                String
+  createdAt           DateTime           @default(now())
+  documents           Document[]         @relation("DocumentOwner")
+  shares              DocumentShare[]
+  attachments         Attachment[]
+  notifications       Notification[]     @relation("NotificationRecipient")
+  notificationsActed  Notification[]     @relation("NotificationActor")
+  versions            DocumentVersion[]
+  comments            Comment[]
+  presence            DocumentPresence[]
+  lastEditedDocuments Document[]         @relation("DocumentLastEditor")
+}
+
+model Document {
+  id             String             @id @default(cuid())
+  title          String             @default("Untitled document")
+  /// Rich-text content stored as Tiptap-generated HTML (schema-normalised on load).
+  content        String             @default("")
+  ownerId        String
+  owner          User               @relation("DocumentOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  /// Who saved the latest content/title change (for "updated by X" hints).
+  lastEditedById String?
+  lastEditedBy   User?              @relation("DocumentLastEditor", fields: [lastEditedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  shares         DocumentShare[]
+  attachments    Attachment[]
+  notifications  Notification[]
+  versions       DocumentVersion[]
+  comments       Comment[]
+  presence       DocumentPresence[]
+
+  @@index([ownerId, updatedAt])
+}
+
+enum ShareRole {
+  VIEWER
+  EDITOR
+}
+
+model DocumentShare {
+  id         String    @id @default(cuid())
+  documentId String
+  userId     String
+  role       ShareRole @default(EDITOR)
+  createdAt  DateTime  @default(now())
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, userId])
+  @@index([userId])
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  documentId   String
+  /// Object key inside the S3/MinIO bucket.
+  storageKey   String   @unique
+  filename     String
+  mimeType     String
+  size         Int
+  /// Hex SHA-256 of the file bytes — used to warn a user about re-uploading the same file.
+  sha256       String
+  uploadedById String
+  createdAt    DateTime @default(now())
+  document     Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  uploadedBy   User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([uploadedById, sha256])
+}
+
+enum NotificationType {
+  DOCUMENT_SHARED
+  SHARE_ROLE_CHANGED
+  COMMENT_ADDED
+}
+
+/// In-app notification shown in the header bell (polled by the client).
+model Notification {
+  id         String           @id @default(cuid())
+  type       NotificationType
+  role       ShareRole?
+  /// Short preview (e.g. the comment text) for COMMENT_ADDED.
+  excerpt    String?
+  userId     String
+  actorId    String
+  documentId String
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+  user       User             @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor      User             @relation("NotificationActor", fields: [actorId], references: [id], onDelete: Cascade)
+  document   Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Snapshot of a document's title + content. Created automatically while editing
+/// (at most one per author every few minutes) and before a restore.
+model DocumentVersion {
+  id         String   @id @default(cuid())
+  documentId String
+  title      String
+  content    String
+  authorId   String
+  createdAt  DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author     User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+}
+
+/// Document-level comment, optionally quoting the text it refers to.
+model Comment {
+  id         String    @id @default(cuid())
+  documentId String
+  authorId   String
+  body       String
+  quote      String?
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  document   Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  author     User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+}
+
+/// Heartbeat of who currently has a document open (active = seen in the last ~30 s).
+model DocumentPresence {
+  documentId String
+  userId     String
+  lastSeenAt DateTime @default(now())
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, userId])
+  @@index([documentId, lastSeenAt])
+}

@@ -1,0 +1,9 @@
+# Only the app is public. Keycloak stays on the internal Docker network: the app's
+# server exchanges credentials with it directly, browsers never talk to it.
+{$DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 6MB
+	}
+	reverse_proxy app:3000
+}
