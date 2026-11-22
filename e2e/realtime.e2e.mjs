@@ -125,6 +125,36 @@ try {
     await shot(bob.page, "bob-sees-alice-caret-still");
   });
 
+  await step("Bob types new bullet items → his caret stays on the line being typed on Alice's screen (never a line below)", async () => {
+    await bob.page.bringToFront();
+    await bob.page.locator(".ProseMirror").click();
+    await bob.page.keyboard.press("Control+End");
+    await bob.page.keyboard.press("Enter");
+    await bob.page.keyboard.type("- first item", { delay: 40 }); // "- " turns the line into a bullet list
+    await bob.page.waitForTimeout(2500);
+    await bob.page.keyboard.press("Enter");
+    const typing = bob.page.keyboard.type("tt second item typed by bob", { delay: 70 });
+    const samples = [];
+    for (let i = 0; i < 14; i++) {
+      await alice.page.waitForTimeout(140);
+      const r = await alice.page.evaluate(() => {
+        const caret = document.querySelector('.remote-caret[data-user="Bob Builder"]');
+        if (!caret) return null;
+        const c = caret.getBoundingClientRect();
+        const line = caret.closest("p, h1, h2, h3"); // must sit inside a line of text, not between blocks
+        if (!line) return { ok: false, why: `caret in <${caret.parentElement?.tagName.toLowerCase()}>` };
+        const b = line.getBoundingClientRect();
+        return { ok: c.y >= b.y - 2 && c.y + 4 <= b.y + b.height + 2, why: "caret outside its line box" };
+      });
+      if (r) samples.push(r);
+    }
+    await typing;
+    const bad = samples.filter((r) => !r.ok);
+    if (!samples.length) throw new Error("caret never seen");
+    if (bad.length) throw new Error(`${bad.length}/${samples.length} samples wrong (${bad[0].why})`);
+    await shot(alice.page, "alice-sees-bob-new-line");
+  });
+
   const comment = `Live comment ${stamp}`;
   await step("Bob comments → it appears in Alice's panel without a refresh", async () => {
     await bob.page.getByPlaceholder("Add a comment…").fill(comment);

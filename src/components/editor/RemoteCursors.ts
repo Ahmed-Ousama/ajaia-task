@@ -1,5 +1,5 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, Selection, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
 export type RemoteCursor = { id: string; name: string; color: string; from: number; to: number };
@@ -17,6 +17,18 @@ function caret(c: RemoteCursor) {
   label.textContent = c.name;
   el.appendChild(label);
   return el;
+}
+
+/**
+ * Caret positions can arrive slightly before the text they refer to (carets are broadcast every
+ * ~120 ms, content every ~1 s). A position past the end of a line would land *between* blocks and
+ * render on the next line, so snap it back to the nearest real text position on the same line.
+ */
+function snapToText(state: EditorState, pos: number) {
+  const max = state.doc.content.size;
+  const $pos = state.doc.resolve(Math.max(0, Math.min(pos, max)));
+  if ($pos.parent.inlineContent) return $pos.pos;
+  return Selection.near($pos, -1).head;
 }
 
 /**
@@ -44,16 +56,15 @@ export const RemoteCursors = Extension.create({
         props: {
           decorations(state) {
             const cursors = remoteCursorsKey.getState(state) ?? [];
-            const max = state.doc.content.size;
-            const clamp = (n: number) => Math.max(1, Math.min(n, max - 1));
             const decorations: Decoration[] = [];
             for (const c of cursors) {
-              const from = clamp(Math.min(c.from, c.to));
-              const to = clamp(Math.max(c.from, c.to));
+              const from = snapToText(state, Math.min(c.from, c.to));
+              const to = snapToText(state, Math.max(c.from, c.to));
+              const head = snapToText(state, c.to);
               if (to > from) {
                 decorations.push(Decoration.inline(from, to, { style: `background-color: ${c.color}2e` }));
               }
-              decorations.push(Decoration.widget(c.to === c.from ? to : clamp(c.to), () => caret(c), { key: `caret-${c.id}`, side: 1 }));
+              decorations.push(Decoration.widget(head, () => caret(c), { key: `caret-${c.id}`, side: 1 }));
             }
             return DecorationSet.create(state.doc, decorations);
           },
