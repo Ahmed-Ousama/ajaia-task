@@ -2,6 +2,7 @@
  * End-to-end check of the real-time collaboration features in two real browsers (Alice + Bob).
  *   BASE_URL=http://localhost:3100 node e2e/realtime.e2e.mjs        (defaults to local dev)
  *   CHROME=/usr/bin/google-chrome  SHOTS=./e2e/shots                 (optional)
+ *   PROXY=socks5://127.0.0.1:18080   (optional, e.g. an `ssh -D` tunnel when the local network meddles with HTTP)
  * Creates its own document (shared Alice → Bob) and deletes it at the end.
  */
 import { chromium } from "playwright-core";
@@ -37,7 +38,11 @@ async function login(browser, email) {
 
 const shot = async (page, name) => SHOTS && page.screenshot({ path: `${SHOTS}/${name}.png` });
 
-const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", headless: true });
+const browser = await chromium.launch({
+  executablePath: process.env.CHROME ?? "/usr/bin/google-chrome",
+  headless: true,
+  ...(process.env.PROXY ? { proxy: { server: process.env.PROXY } } : {}),
+});
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const stamp = Date.now().toString(36);
 let alice, bob, docId;
