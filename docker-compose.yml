@@ -3,9 +3,14 @@
 #
 # All values come from `.env` (see .env.example). Local defaults work out of the box;
 # production must set DOMAIN, APP_URL, KC_HOSTNAME, KC_COMMAND and real secrets.
+# Fixed project name: containers/volumes/networks are namespaced (ajaia-docs_*), so this stack can
+# share a host with other compose projects without touching them.
+name: ajaia-docs
+
 services:
   db:
     image: postgres:16-alpine
+    mem_limit: 768m
     restart: unless-stopped
     environment:
       POSTGRES_USER: ajaia
@@ -27,6 +32,7 @@ services:
   # drop-in community build. Pinned to an exact release.
   minio:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    mem_limit: 512m
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -45,6 +51,7 @@ services:
   # exchanges credentials with it, browsers never talk to it. Admin console: SSH tunnel to :8180.
   keycloak:
     image: quay.io/keycloak/keycloak:26.4.7
+    mem_limit: 1g
     restart: unless-stopped
     command: ${KC_COMMAND:-start-dev --import-realm}
     environment:
@@ -72,6 +79,7 @@ services:
   app:
     profiles: ["prod"]
     build: .
+    mem_limit: 1g
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -98,10 +106,12 @@ services:
   caddy:
     profiles: ["prod"]
     image: caddy:2-alpine
+    mem_limit: 256m
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      # Defaults for a dedicated VPS. On a shared host, e.g. HTTP_BIND=8090 and HTTPS_BIND=127.0.0.1:8453.
+      - "${HTTP_BIND:-80}:80"
+      - "${HTTPS_BIND:-443}:443"
     environment:
       DOMAIN: ${DOMAIN:-localhost}
     volumes:
