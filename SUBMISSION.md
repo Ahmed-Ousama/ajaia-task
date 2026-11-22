@@ -1,7 +1,8 @@
 # Submission: Ajaia Docs
 
 ## Links
-- **Live product:** https://LIVE_DOMAIN. The deployment stays up until at least **2026-12-06**.
+- **Live product:** https://government-swaziland-connectors-concerns.trycloudflare.com. The deployment stays up until at least **2026-12-06**.
+- **Source repository:** https://github.com/Ahmed-Ousama/ajaia-task. CI runs lint, type-check, tests and build on every push.
 - **Walkthrough video:** see `VIDEO_URL.txt`.
 
 ## Test accounts
@@ -16,15 +17,15 @@ See [README](README.md#demo-accounts) for what each account starts with and a 2-
 ## What's in this folder
 | Path | What it is |
 |---|---|
+| `ajaia-docs-source.zip` | The full source code, identical to the GitHub repo above |
 | `README.md` | Local setup, run, test and deploy instructions; demo accounts; feature list |
 | `ARCHITECTURE.md` | Architecture note: what I prioritized and why, tradeoffs, cuts, next steps |
 | `AI_WORKFLOW.md` | AI workflow note: tools used, where they helped, what I changed or rejected, how I verified |
 | `SUBMISSION.md` | This file |
 | `VIDEO_URL.txt` | Walkthrough video link |
-| `src/`, `prisma/`, `keycloak/`, `tests/` | Source code, DB schema and migrations, Keycloak realm, tests |
-| `docker-compose.yml`, `Dockerfile`, `Caddyfile`, `deploy/` | Infrastructure and deployment |
+| `screenshots/` | Screenshots taken from the live deployment by the end-to-end test (two browsers: Alice and Bob) |
 
-`node_modules/`, `.next/` and `.env` are deliberately left out. `.env.example` documents every variable.
+`node_modules/`, `.next/` and `.env` are deliberately left out of the zip. `.env.example` documents every variable.
 
 ## What's working (end to end, deployed)
 - Our own login page, backed by Keycloak: credentials are checked by Keycloak, brute-force protection is on, and sign-out also ends the Keycloak session. There are 3 seeded users, and the login page fills in a demo account with one click.

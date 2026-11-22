@@ -5,7 +5,9 @@
 Ajaia Docs is a lightweight collaborative document editor. You can create, format, import and share
 documents, attach files to them, and get notified when someone shares a document with you.
 
-**Live:** https://LIVE_DOMAIN
+**Live:** https://government-swaziland-connectors-concerns.trycloudflare.com
+
+(Hosted on a shared VPS behind a Cloudflare tunnel. See *Deploy* below.)
 
 ## Demo accounts
 
@@ -134,7 +136,12 @@ scp .env.prod root@SERVER:/opt/ajaia-docs/.env
 SSH_KEY=~/.ssh/your_key deploy/deploy.sh root@SERVER
 ```
 
-- Caddy gets a Let's Encrypt certificate for `DOMAIN` automatically. `sslip.io` hostnames mean no domain needs to be registered.
+- **On a dedicated server:** Caddy gets a Let's Encrypt certificate for `DOMAIN` automatically. `sslip.io` hostnames mean no domain needs to be registered.
+- **On a shared server whose ports 80 and 443 are taken** (the live demo):
+  - Generate the env with `deploy/make-env.sh <ip> <http-port>`.
+  - Start the opt-in Cloudflare tunnel with `docker compose --profile prod --profile tunnel up -d`.
+  - Set `APP_URL` to the `https://….trycloudflare.com` URL it prints.
+  - The stack is an isolated Compose project (`ajaia-docs`) with memory limits, so it runs alongside other workloads without touching them.
 - Only the app is public. Keycloak, Postgres and MinIO stay on the internal Docker network. For the Keycloak admin console, use an SSH tunnel: `ssh -L 8180:127.0.0.1:8180 root@SERVER`.
 - The app container applies migrations and seeds the demo users each time it starts.
 

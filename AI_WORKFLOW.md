@@ -38,10 +38,13 @@
 ## How I verified correctness, UX and reliability
 
 - **Automated:** `npm test` runs 20 tests, including an integration test against the real route handlers and Postgres for the whole sharing and permissions flow. `tsc --noEmit` and ESLint are clean.
-- **Manual end-to-end** on the deployed build with the three demo users:
-  - create, format, rename, refresh;
-  - import `.md` and `.docx` files;
-  - attach and download files;
-  - share as viewer, then as editor, and confirm the view-only UI and the server-side 403s;
-  - check that unshared documents return 404.
+- **Manual testing in two browsers** (Alice and Bob side by side). That's how I found the collaborator-caret bugs. Each one then got a test that fails on the old code before it was fixed.
+- **A 16-step Playwright end-to-end test in two real Chrome browsers** (`npm run test:e2e`), run locally and **against the live URL**. It covers:
+  - login through Keycloak;
+  - instant search and the share picker;
+  - presence and coloured carets;
+  - live text sync and live comments;
+  - delivery after going offline;
+  - notifications.
+- **A live smoke test of file handling:** import, attachment upload and byte-identical download, duplicate → 409, Word export, and 401 without a session.
 - **Security-relevant code I read line by line:** the access checks in every route, the download headers, and the upload size and type limits.
