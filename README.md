@@ -53,7 +53,8 @@ Signing out also ends the Keycloak session, so switching between users works wit
 - **Comments:** anyone with access can comment, viewers included, and a comment can quote the selected text. Owners, editors and the comment's author can resolve or reopen it.
 - **Version history:** a snapshot is saved automatically for each editing session. You can preview any version read-only and restore it, and a restore is itself undoable.
 - **Real-time collaboration indicators** (Server-Sent Events):
-  - Avatars show who has the document open, and they update the moment someone joins or leaves.
+  - Google Docs–style **coloured carets with name labels** show where each collaborator is typing, and their selections are highlighted in their colour.
+  - Avatars show who has the document open, and they update the moment someone joins or leaves. Each avatar uses the same colour as that person's caret.
   - "Bob is editing…" appears while someone else saves.
   - Their changes show up in your editor right away if you aren't typing. If you are, a "Load latest" banner appears instead.
   - New comments appear immediately.

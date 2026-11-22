@@ -9,6 +9,7 @@ export type DocEvent =
   | { type: "presence" }
   | { type: "comments" }
   | { type: "typing"; by: { id: string; name: string } }
+  | { type: "cursor"; by: { id: string; name: string }; from: number; to: number }
   | { type: "content"; updatedAt: string; by: { id: string; name: string } };
 
 const g = globalThis as unknown as { __ajaiaBus?: EventEmitter; __ajaiaConns?: Map<string, number> };

@@ -25,6 +25,8 @@ import UserMenu, { initials } from "@/components/UserMenu";
 import { useRouter } from "next/navigation";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { editorExtensions } from "./extensions";
+import { RemoteCursors, remoteCursorsKey, type RemoteCursor } from "./RemoteCursors";
+import { userColor } from "@/lib/user-color";
 import { api, jsonInit } from "@/lib/api-client";
 import { can } from "@/lib/access";
 import { MAX_TITLE_LENGTH } from "@/lib/validation-limits";
@@ -44,6 +46,7 @@ type Patch = { title?: string; content?: string };
 const SAVE_DEBOUNCE_MS = 700;
 const MAX_SAVE_WAIT_MS = 1500;
 const TYPING_PING_MS = 2000;
+const CURSOR_THROTTLE_MS = 120;
 
 export default function DocumentEditor({
   doc,
@@ -130,7 +133,7 @@ export default function DocumentEditor({
   );
 
   const editor = useEditor({
-    extensions: editorExtensions(editable ? "Start writing…" : ""),
+    extensions: [...editorExtensions(editable ? "Start writing…" : ""), RemoteCursors],
     content: doc.content || "",
     editable,
     immediatelyRender: false,
@@ -185,6 +188,13 @@ export default function DocumentEditor({
   const [liveEditor, setLiveEditor] = useState<{ id: string; name: string } | null>(null);
   const liveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ---- Collaborators' carets: latest raw positions per user, rendered by the RemoteCursors plugin.
+  const rawCursors = useRef(new Map<string, RemoteCursor>());
+  const pushCursors = useCallback(() => {
+    if (!editor || editor.isDestroyed) return;
+    editor.view.dispatch(editor.state.tr.setMeta(remoteCursorsKey, [...rawCursors.current.values()]));
+  }, [editor]);
+
   const syncRemote = useCallback(
     async (byName: string) => {
       try {
@@ -195,6 +205,7 @@ export default function DocumentEditor({
         const { from, to } = editor.state.selection;
         const hadFocus = editor.isFocused;
         applyServerCopy(copy);
+        pushCursors(); // their carets refer to the content we just loaded
         if (hadFocus) {
           const max = editor.state.doc.content.size;
           editor.commands.setTextSelection({ from: Math.min(from, max), to: Math.min(to, max) });
@@ -203,7 +214,7 @@ export default function DocumentEditor({
         /* transient; the presence fallback will catch up */
       }
     },
-    [applyServerCopy, doc.id, editor],
+    [applyServerCopy, doc.id, editor, pushCursors],
   );
 
   // One live stream per tab; joining it also announces our presence on this document.
@@ -216,6 +227,53 @@ export default function DocumentEditor({
     if (liveTimer.current) clearTimeout(liveTimer.current);
     liveTimer.current = setTimeout(() => setLiveEditor(null), 4000);
   });
+
+  useLiveEvent("cursor", (e) => {
+    if (e.by.id === currentUserId) return;
+    rawCursors.current.set(e.by.id, { id: e.by.id, name: e.by.name, color: userColor(e.by.id), from: e.from, to: e.to });
+    pushCursors();
+  });
+
+  // Drop carets of people who closed the document.
+  useEffect(() => {
+    const here = new Set(presence.active.map((u) => u.id));
+    let changed = false;
+    for (const id of [...rawCursors.current.keys()]) {
+      if (!here.has(id)) {
+        rawCursors.current.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) pushCursors();
+  }, [presence.active, pushCursors]);
+
+  // Broadcast my caret/selection (throttled, trailing) so others see where I am.
+  useEffect(() => {
+    if (!editor || !editable) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let last = 0;
+    const send = () => {
+      timer = null;
+      last = Date.now();
+      const { from, to } = editor.state.selection;
+      void fetch(`/api/documents/${doc.id}/cursor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to }),
+      }).catch(() => {});
+    };
+    const schedule = () => {
+      if (timer) return;
+      timer = setTimeout(send, Math.max(0, CURSOR_THROTTLE_MS - (Date.now() - last)));
+    };
+    editor.on("selectionUpdate", schedule);
+    editor.on("focus", schedule);
+    return () => {
+      editor.off("selectionUpdate", schedule);
+      editor.off("focus", schedule);
+      if (timer) clearTimeout(timer);
+    };
+  }, [editor, editable, doc.id]);
 
   useLiveEvent("content", (e) => {
     if (e.by.id === currentUserId || Date.parse(e.updatedAt) <= lastKnownUpdatedAt.current) return;
@@ -345,7 +403,7 @@ export default function DocumentEditor({
                 {live === "live" ? "Live" : "Connecting…"}
               </span>
               {liveEditor && (
-                <span className="flex items-center gap-1 font-medium text-emerald-700" data-testid="live-editor">
+                <span className="flex items-center gap-1 font-medium" style={{ color: userColor(liveEditor.id) }} data-testid="live-editor">
                   <span aria-hidden>·</span> <Pencil size={12} /> {liveEditor.name} is editing…
                 </span>
               )}
@@ -359,13 +417,17 @@ export default function DocumentEditor({
 
           {presence.active.length > 0 && (
             <div className="hidden -space-x-2 sm:flex" aria-label="People viewing this document">
-              {presence.active.slice(0, 4).map((u, i) => (
+              {presence.active.slice(0, 4).map((u) => (
                 <span
                   key={u.id}
                   title={liveEditor?.id === u.id ? `${u.name} is editing` : `${u.name} is viewing`}
-                  className={`grid h-8 w-8 place-items-center rounded-full border-2 border-white text-xs font-semibold text-white transition ${
-                    ["bg-emerald-600", "bg-amber-600", "bg-purple-600", "bg-rose-600"][i % 4]
-                  } ${liveEditor?.id === u.id ? "ring-2 ring-emerald-400 ring-offset-1" : ""}`}
+                  data-testid="presence-avatar"
+                  className="grid h-8 w-8 place-items-center rounded-full border-2 border-white text-xs font-semibold text-white transition"
+                  // Same colour as this person's caret and name label in the document.
+                  style={{
+                    backgroundColor: userColor(u.id),
+                    boxShadow: liveEditor?.id === u.id ? `0 0 0 2px #fff, 0 0 0 4px ${userColor(u.id)}` : undefined,
+                  }}
                 >
                   {initials(u.name)}
                 </span>

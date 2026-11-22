@@ -113,6 +113,11 @@ The same type and size rules are checked in the browser for quick feedback and e
     - Each browser tab holds exactly one `EventSource` to `/api/events?doc=<id>`. It carries the user's notification channel and, on a document page, that document's channel.
     - One stream per tab keeps HTTP/1.1 browsers well under their 6-connections-per-host limit.
     - Writes publish to an in-process event bus (`src/lib/realtime.ts`): saves, restores, comments, typing pings, joins and leaves.
+  - **Carets:**
+    - Each editor broadcasts its selection (throttled to 120 ms) through `POST /api/documents/:id/cursor`.
+    - Other people render it as a coloured caret with a name label, plus a tinted selection, using a ProseMirror decoration plugin (`RemoteCursors`).
+    - Local edits remap remote positions so the carets stay on the right text.
+    - Colours are derived from the user id, so a person has the same colour in every browser and their header avatar matches their caret.
   - **Presence:**
     - The SSE connection itself counts as presence: opening it marks you as here, and closing your last tab removes you immediately.
     - A slow heartbeat (15 s) is only a fallback.

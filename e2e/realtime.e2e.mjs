@@ -79,6 +79,28 @@ try {
     await alice.page.locator(".ProseMirror").getByText(typed).waitFor({ timeout: 6000 });
   });
 
+  await step("Alice sees Bob's caret with his name, in the same colour as his avatar", async () => {
+    const label = alice.page.locator(".remote-caret-label", { hasText: "Bob Builder" });
+    await label.waitFor({ timeout: 4000 });
+    const caretColor = await label.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const avatarColor = await alice.page
+      .locator('[data-testid="presence-avatar"][title^="Bob Builder"]')
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    if (caretColor !== avatarColor) throw new Error(`caret ${caretColor} vs avatar ${avatarColor}`);
+    // Bob moves to the start of the line → his caret follows on Alice's screen.
+    const before = await label.boundingBox();
+    await bob.page.keyboard.press("Home");
+    await alice.page.waitForFunction(
+      (x) => {
+        const el = document.querySelector(".remote-caret-label");
+        return el && Math.abs(el.getBoundingClientRect().x - x) > 20;
+      },
+      before.x,
+      { timeout: 4000 },
+    );
+    await shot(alice.page, "alice-sees-bob-caret");
+  });
+
   const comment = `Live comment ${stamp}`;
   await step("Bob comments → it appears in Alice's panel without a refresh", async () => {
     await bob.page.getByPlaceholder("Add a comment…").fill(comment);
