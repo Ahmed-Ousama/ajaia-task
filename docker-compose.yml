@@ -121,6 +121,18 @@ services:
     depends_on:
       - app
 
+  # HTTPS without owning ports 80/443 (e.g. on a shared host): a Cloudflare quick tunnel to Caddy.
+  # Opt-in: docker compose --profile prod --profile tunnel up -d   → URL appears in `docker compose logs tunnel`.
+  # Set APP_URL in .env to that https URL. (Quick-tunnel URLs change if this container is recreated.)
+  tunnel:
+    profiles: ["tunnel"]
+    image: cloudflare/cloudflared:2026.10.0
+    mem_limit: 128m
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://caddy:80
+    depends_on:
+      - caddy
+
 volumes:
   pgdata:
   miniodata:

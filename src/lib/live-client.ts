@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 /** Events pushed over the tab's single SSE stream (`/api/events`). */
 export type LiveEvent =
+  | { type: "hello" }
   | { type: "notification" }
   | { type: "presence" }
   | { type: "comments" }
@@ -15,13 +16,18 @@ export type LiveStatus = "connecting" | "live" | "reconnecting";
 
 type Listener = (e: LiveEvent) => void;
 
-// ---- one EventSource per tab, shared by every component (module singleton) ----
+// ---- one live connection per tab, shared by every component (module singleton) ----
+// Transport: Server-Sent Events by default. The server's first frame is a "hello"; if it doesn't
+// arrive within HELLO_TIMEOUT_MS, something in between is buffering the stream (e.g. a Cloudflare
+// quick tunnel), so we switch this page to long-polling /api/events/poll — same events, same API.
+const HELLO_TIMEOUT_MS = 3500;
 const listeners = new Set<Listener>();
 const statusListeners = new Set<(s: LiveStatus) => void>();
 const docRefs = new Map<string, number>();
-let source: EventSource | null = null;
-let sourceUrl = "";
 let status: LiveStatus = "connecting";
+let mode: "sse" | "poll" = "sse";
+let activeKey: string | null = null; // doc id ("" = user channel only) we're connected for
+let stop: (() => void) | null = null;
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
 
 function setStatus(s: LiveStatus) {
@@ -29,9 +35,9 @@ function setStatus(s: LiveStatus) {
   statusListeners.forEach((l) => l(s));
 }
 
-function desiredUrl() {
-  const doc = [...docRefs.keys()][0];
-  return doc ? `/api/events?doc=${encodeURIComponent(doc)}` : "/api/events";
+function dispatch(event: LiveEvent) {
+  if (event.type === "hello") return;
+  listeners.forEach((l) => l(event));
 }
 
 /**
@@ -44,35 +50,75 @@ function resyncAll() {
 }
 if (typeof window !== "undefined") window.addEventListener("online", resyncAll);
 
-/** (Re)open or close the stream to match who is listening. Batched so mount/unmount bursts open one stream. */
+function connectSse(doc: string) {
+  const es = new EventSource(doc ? `/api/events?doc=${encodeURIComponent(doc)}` : "/api/events");
+  let gotHello = false;
+  const helloTimer = setTimeout(() => {
+    if (gotHello) return;
+    es.close();
+    mode = "poll"; // sticky for this page load
+    stop = connectPoll(doc);
+  }, HELLO_TIMEOUT_MS);
+  es.onerror = () => setStatus("reconnecting"); // EventSource retries automatically
+  es.onmessage = (msg) => {
+    let event: LiveEvent;
+    try {
+      event = JSON.parse(msg.data) as LiveEvent;
+    } catch {
+      return;
+    }
+    if (event.type === "hello") {
+      gotHello = true;
+      clearTimeout(helloTimer);
+      setStatus("live");
+      resyncAll(); // (re)connected: reload anything we may have missed
+      return;
+    }
+    dispatch(event);
+  };
+  return () => {
+    clearTimeout(helloTimer);
+    es.close();
+  };
+}
+
+function connectPoll(doc: string) {
+  const ctrl = new AbortController();
+  void (async () => {
+    let since = 0;
+    while (!ctrl.signal.aborted) {
+      try {
+        const qs = new URLSearchParams({ since: String(since), ...(doc ? { doc } : {}) });
+        const res = await fetch(`/api/events/poll?${qs}`, { signal: ctrl.signal, cache: "no-store" });
+        if (!res.ok) throw new Error(String(res.status));
+        const data = (await res.json()) as { seq: number; events: LiveEvent[] };
+        if (since === 0) resyncAll();
+        since = data.seq;
+        setStatus("live");
+        data.events.forEach(dispatch);
+      } catch {
+        if (ctrl.signal.aborted) return;
+        setStatus("reconnecting");
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  })();
+  return () => ctrl.abort();
+}
+
+/** (Re)connect or disconnect to match who is listening. Batched so mount/unmount bursts connect once. */
 function reconcile() {
   if (reconcileTimer) clearTimeout(reconcileTimer);
   reconcileTimer = setTimeout(() => {
     reconcileTimer = null;
-    const wanted = listeners.size > 0 ? desiredUrl() : "";
-    if (wanted === sourceUrl) return;
-    source?.close();
-    source = null;
-    sourceUrl = wanted;
-    if (!wanted) return;
+    const wanted = listeners.size > 0 ? ([...docRefs.keys()][0] ?? "") : null;
+    if (wanted === activeKey) return;
+    stop?.();
+    stop = null;
+    activeKey = wanted;
+    if (wanted === null) return;
     setStatus("connecting");
-    const es = new EventSource(wanted);
-    // On every (re)connect, resync: events published while we were disconnected were missed,
-    // so ask every listener to reload (comments, presence → saved-content check, notifications).
-    es.onopen = () => {
-      setStatus("live");
-      resyncAll();
-    };
-    es.onerror = () => setStatus("reconnecting"); // EventSource retries automatically
-    es.onmessage = (msg) => {
-      try {
-        const event = JSON.parse(msg.data) as LiveEvent;
-        listeners.forEach((l) => l(event));
-      } catch {
-        /* ignore malformed frames */
-      }
-    };
-    source = es;
+    stop = mode === "poll" ? connectPoll(wanted) : connectSse(wanted);
   }, 30);
 }
 

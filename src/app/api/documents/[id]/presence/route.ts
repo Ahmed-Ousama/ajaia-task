@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { loadDocumentWithAccess } from "@/lib/documents";
 import { handle, requireApiUser } from "@/lib/http";
+import { publish } from "@/lib/realtime";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -46,6 +47,8 @@ export const POST = handle(async (_req: Request, { params }: Ctx) => {
 /** Leaving the document (sent with keepalive on unmount/page hide). */
 export const DELETE = handle(async (_req: Request, { params }: Ctx) => {
   const user = await requireApiUser();
-  await prisma.documentPresence.deleteMany({ where: { documentId: (await params).id, userId: user.id } });
+  const id = (await params).id;
+  const { count } = await prisma.documentPresence.deleteMany({ where: { documentId: id, userId: user.id } });
+  if (count) publish(id, { type: "presence" });
   return new NextResponse(null, { status: 204 });
 });
